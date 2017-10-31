@@ -62,11 +62,37 @@ func (pubg *Pubg) Get(nickname string) *PlayerData {
 			body, _ := ioutil.ReadAll(response.Body)
 			playerData := &PlayerData{}
 			json.Unmarshal([]byte(pubg.PlayerData(body)), playerData)
-			pubg.Save(playerData)
+			if playerData.AccountID != "" {
+				pubg.Save(playerData)
+			}
 			return playerData
 		}
 	}
 	return nil
+}
+
+func (pubg *Pubg) FindByAccountId(accountId string) *PlayerData {
+	query := struct {
+		AccountID string `bson:"_id"`
+	}{}
+	query.AccountID = accountId
+	find := pubg.mongo.Select(query)
+	count, _ := find.Count()
+	fmt.Println(count)
+	if count == 0 {
+		return nil
+	} else {
+		playerData := &PlayerData{}
+		err := find.One(playerData)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(playerData)
+		if time.Now().Unix()-playerData.UpdatedAt > 3600 {
+			return pubg.Get(playerData.PlayerName)
+		}
+		return playerData
+	}
 }
 
 func (pubg *Pubg) Find(nickname string) *PlayerData {
