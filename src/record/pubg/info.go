@@ -3,6 +3,7 @@ package pubg
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 )
 
 type Season struct {
@@ -206,6 +207,10 @@ func (match *Match) GetStats(matchType string, region string, season string, pla
 			}
 		}
 	}
+	if match.Stats.Performance.KillDeathRatio == "" {
+		return nil
+	}
+
 	js, _ := json.Marshal(match)
 	return js
 }
@@ -256,10 +261,16 @@ type History struct {
 	Histories []interface{} `json:"histories"`
 }
 
-func (history *History) GetHistory(playerData *PlayerData) []byte {
+func (history *History) GetHistory(match string, playerData *PlayerData) []byte {
 	history.Histories = []interface{}{}
 	for _, stat := range playerData.MatchHistory {
-		history.Histories = append(history.Histories, stat)
+		if match != "all" {
+			if strings.EqualFold(match, stat.MatchDisplay) {
+				history.Histories = append(history.Histories, stat)
+			}
+		} else {
+			history.Histories = append(history.Histories, stat)
+		}
 	}
 
 	js, _ := json.Marshal(history)

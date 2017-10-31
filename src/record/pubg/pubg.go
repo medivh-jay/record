@@ -87,7 +87,6 @@ func (pubg *Pubg) FindByAccountId(accountId string) *PlayerData {
 		if err != nil {
 			fmt.Println(err)
 		}
-		fmt.Println(playerData)
 		if time.Now().Unix()-playerData.UpdatedAt > 3600 {
 			return pubg.Get(playerData.PlayerName)
 		}

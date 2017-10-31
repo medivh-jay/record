@@ -59,7 +59,22 @@ func main() {
 				season = params["season"][0]
 			}
 
+			regionInfo := &pubg.Regions{}
+			regionInfo.GetUserRegion(data)
+
+			soloLen := len(regionInfo.RegionInfo[season].Data.Solo)
+			duoLen := len(regionInfo.RegionInfo[season].Data.Duo)
+			squadLen := len(regionInfo.RegionInfo[season].Data.Squad)
 			matchType := "solo"
+
+			if soloLen > 0 {
+				matchType = "solo"
+			} else if duoLen > 0 {
+				matchType = "duo"
+			} else if squadLen > 0 {
+				matchType = "squad"
+			}
+
 			if _, ok := params["match"]; ok {
 				matchType = params["match"][0]
 			}
@@ -67,8 +82,12 @@ func main() {
 			if _, ok := params["region"]; ok {
 				region = params["region"][0]
 			}
-
-			writer.Write(match.GetStats(matchType, region, season, data))
+			result := match.GetStats(matchType, region, season, data)
+			if result != nil {
+				writer.Write(result)
+			} else {
+				writer.Write(js)
+			}
 		} else {
 			writer.Write(js)
 		}
@@ -89,12 +108,18 @@ func main() {
 	http.HandleFunc("/pubg/history.json", func(writer http.ResponseWriter, request *http.Request) {
 		params, _ := url.ParseQuery(request.URL.RawQuery)
 		accountId := params["account_id"][0]
+
+		match := "all"
+		if _, ok := params["match"]; ok {
+			match = params["match"][0]
+		}
+
 		data := pubgTracker.FindByAccountId(accountId)
 		if data == nil || data.AccountID == "" {
 			writer.Write(js)
 		} else {
 			history := pubg.History{}
-			writer.Write(history.GetHistory(data))
+			writer.Write(history.GetHistory(match, data))
 		}
 	})
 
