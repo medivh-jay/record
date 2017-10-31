@@ -21,7 +21,3 @@ http://127.0.0.1/pubg/userinfo.json?nickname=xxx
   "steam_id": 76561198381807090
 }
 ```
-
-```json
-
-```
