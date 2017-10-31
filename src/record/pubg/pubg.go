@@ -145,6 +145,7 @@ func (pubg *Pubg) PlayerData(find []byte) string {
 	playerData = strings.Replace(playerData, "playerData", "", -1)
 	playerData = strings.Replace(playerData, "=", "", -1)
 	playerData = strings.Replace(playerData, ";", "", -1)
+	fmt.Println(playerData)
 	return playerData
 }
 
