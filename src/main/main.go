@@ -2,17 +2,36 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"flag"
+	"gopkg.in/mgo.v2"
 	"net/http"
 	"net/url"
+	"record/log"
 	"record/pubg"
+	"strconv"
+	"time"
 )
 
 func main() {
-	pubgTracker := pubg.New()
+	port := flag.String("port", "9999", "start port")
+	mgoIp := flag.String("host", "127.0.0.1:27017", "mongo ip")
+	username := flag.String("username", "tracker", "mongo username")
+	password := flag.String("password", "e5d$e(Gs%epN3nDb", "mongo password")
+	flag.Parse()
+	log.Info("服务启动!时间:" + time.Now().String() + ",mongoDB地址:" + *mgoIp + ",mongo验证（用户名:" + *username + ", 密码:" + *password + "）")
+
+	mgoDialInfo := &mgo.DialInfo{Username: *username, Password: *password, Addrs: []string{*mgoIp}}
+
+	pubgTracker := pubg.New(mgoDialInfo)
+
+	pubg.TrackerGo.New().Do(pubgTracker)
 
 	nilStruct := struct {
 		ErrorInfo string `json:"error_info"`
+	}{}
+
+	successStruct := struct {
+		Result bool `json:"result"`
 	}{}
 
 	nilStruct.ErrorInfo = "false"
@@ -28,15 +47,33 @@ func main() {
 
 		params, err := url.ParseQuery(request.URL.RawQuery)
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Info(err.Error())
 		} else {
-			fmt.Println(params["nickname"][0])
-			data := pubgTracker.Find(params["nickname"][0])
-			if data.AccountID == "" {
-				writer.Write(js)
+			if _, ok := params["nickname"]; ok {
+				log.Info("查询用户nickname：" + params["nickname"][0])
+				data := pubgTracker.Find(params["nickname"][0])
+				if data.AccountID == "" {
+					writer.Write(js)
+				} else {
+					userInfo := &pubg.UserInfo{}
+					writer.Write(userInfo.ToJSON(data))
+				}
+			} else if _, ok := params["steamid"]; ok {
+				log.Info("查询用户steamId：" + params["steamid"][0])
+				steamID, err := strconv.ParseInt(params["steamid"][0], 10, 64)
+				if err != nil {
+					writer.Write(js)
+				} else {
+					data := pubgTracker.FindBySteamId(steamID)
+					if data.AccountID == "" {
+						writer.Write(js)
+					} else {
+						userInfo := &pubg.UserInfo{}
+						writer.Write(userInfo.ToJSON(data))
+					}
+				}
 			} else {
-				userInfo := &pubg.UserInfo{}
-				writer.Write(userInfo.ToJSON(data))
+				writer.Write(js)
 			}
 		}
 	})
@@ -67,18 +104,22 @@ func main() {
 			squadLen := len(regionInfo.RegionInfo[season].Data.Squad)
 			matchType := "solo"
 
+			region := "agg"
 			if soloLen > 0 {
 				matchType = "solo"
+				region = regionInfo.RegionInfo[season].Data.Solo[0]
 			} else if duoLen > 0 {
 				matchType = "duo"
+				region = regionInfo.RegionInfo[season].Data.Duo[0]
 			} else if squadLen > 0 {
 				matchType = "squad"
+				region = regionInfo.RegionInfo[season].Data.Squad[0]
 			}
 
 			if _, ok := params["match"]; ok {
 				matchType = params["match"][0]
 			}
-			region := "agg"
+
 			if _, ok := params["region"]; ok {
 				region = params["region"][0]
 			}
@@ -123,5 +164,35 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":9999", nil)
+	http.HandleFunc("/pubg/upload.json", func(writer http.ResponseWriter, request *http.Request) {
+		request.ParseForm()
+		if request.Method != "POST" {
+			nilStruct.ErrorInfo = "请求方式错误，当前请求方式:" + request.Method + ",期待的请求方式: POST"
+			result, _ := json.Marshal(nilStruct)
+			writer.Write(result)
+		} else {
+			if _, ok := request.Form["pubg"]; ok {
+				log.Info(request.Form["pubg"][0])
+				info := pubgTracker.PlayerData([]byte("var playerData = " + request.Form["pubg"][0]))
+				playerData := &pubg.PlayerData{}
+				json.Unmarshal([]byte(info), playerData)
+				if playerData.AccountID != "" {
+					pubgTracker.Save(playerData)
+					successStruct.Result = true
+					result, _ := json.Marshal(successStruct)
+					writer.Write(result)
+				} else {
+					nilStruct.ErrorInfo = "数据解析失败，无法存入,接收的数据为： " + request.Form["pubg"][0]
+					result, _ := json.Marshal(nilStruct)
+					writer.Write(result)
+				}
+			} else {
+				nilStruct.ErrorInfo = "接收到的数据没有找到key : pubg"
+				result, _ := json.Marshal(nilStruct)
+				writer.Write(result)
+			}
+		}
+
+	})
+	http.ListenAndServe(":"+*port, nil)
 }

@@ -2,12 +2,13 @@ package pubg
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"gopkg.in/mgo.v2"
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"record/db"
+	"record/log"
 	"regexp"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (pubg *Pubg) Get(nickname string) *PlayerData {
 	request.Header.Add("user-agent", UserAgent)
 	response, err := pubg.client.Do(request)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Info("连接请求错误" + err.Error())
 	} else {
 		if response.StatusCode == 503 {
 			pubg.AuthRobot(response)
@@ -71,6 +72,26 @@ func (pubg *Pubg) Get(nickname string) *PlayerData {
 	return nil
 }
 
+func (pubg *Pubg) FindBySteamId(steamId int64) *PlayerData {
+	query := struct {
+		SteamID int64 `bson:"steam_id"`
+	}{}
+	query.SteamID = steamId
+	find := pubg.mongo.Select(query)
+	count, _ := find.Count()
+	if count == 0 {
+		return nil
+	} else {
+		playerData := &PlayerData{}
+		err := find.One(playerData)
+		if err != nil {
+			log.Info("mongo查询错误" + err.Error())
+		}
+		TrackerGo.New().Add(playerData.PlayerName)
+		return playerData
+	}
+}
+
 func (pubg *Pubg) FindByAccountId(accountId string) *PlayerData {
 	query := struct {
 		AccountID string `bson:"_id"`
@@ -78,17 +99,13 @@ func (pubg *Pubg) FindByAccountId(accountId string) *PlayerData {
 	query.AccountID = accountId
 	find := pubg.mongo.Select(query)
 	count, _ := find.Count()
-	fmt.Println(count)
 	if count == 0 {
 		return nil
 	} else {
 		playerData := &PlayerData{}
 		err := find.One(playerData)
 		if err != nil {
-			fmt.Println(err)
-		}
-		if time.Now().Unix()-playerData.UpdatedAt > 3600 {
-			return pubg.Get(playerData.PlayerName)
+			log.Info("mongo查询错误" + err.Error())
 		}
 		return playerData
 	}
@@ -101,19 +118,15 @@ func (pubg *Pubg) Find(nickname string) *PlayerData {
 	query.PlayerName = nickname
 	find := pubg.mongo.Select(query)
 	count, _ := find.Count()
-	fmt.Println(count)
 	if count == 0 {
 		return pubg.Get(nickname)
 	} else {
 		playerData := &PlayerData{}
 		err := find.One(playerData)
 		if err != nil {
-			fmt.Println(err)
+			log.Info("mongo查询错误:" + err.Error())
 		}
-		fmt.Println(playerData)
-		if time.Now().Unix()-playerData.UpdatedAt > 3600 {
-			return pubg.Get(nickname)
-		}
+		TrackerGo.New().Add(nickname)
 		return playerData
 	}
 }
@@ -125,7 +138,7 @@ func (pubg *Pubg) Save(playerData *PlayerData) {
 	query.AccountId = playerData.AccountID
 	count, err := pubg.mongo.Select(query).Count()
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Info("mongo查询错误:" + err.Error())
 	} else {
 		if count > 0 {
 			playerData.UpdatedAt = time.Now().Unix()
@@ -145,17 +158,51 @@ func (pubg *Pubg) PlayerData(find []byte) string {
 	playerData = strings.Replace(playerData, "playerData", "", -1)
 	playerData = strings.Replace(playerData, "=", "", -1)
 	playerData = strings.Replace(playerData, ";", "", -1)
-	fmt.Println(playerData)
 	return playerData
 }
 
-func New() *Pubg {
-	pubg := &Pubg{client: &http.Client{}, mongo: db.New()}
+func New(dialInfo *mgo.DialInfo) *Pubg {
+	pubg := &Pubg{client: &http.Client{}, mongo: db.New(dialInfo)}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Info("cookieJar实例化错误:" + err.Error())
 	} else {
 		pubg.client.Jar = jar
 	}
 	return pubg
+}
+
+var TrackerGo *Tracker
+
+type Tracker struct {
+	nicknames chan string
+}
+
+func (tracker *Tracker) New() *Tracker {
+	if TrackerGo == nil {
+		TrackerGo = &Tracker{
+			nicknames: make(chan string, 1000),
+		}
+	}
+	return TrackerGo
+}
+
+func (tracker *Tracker) Add(nickname string) {
+	if len(tracker.nicknames) < 1000 {
+		tracker.nicknames <- nickname
+	}
+}
+
+func (tracker *Tracker) Do(pubgTracker *Pubg) {
+	go func(nicknames chan string) {
+		for {
+			select {
+			case nickname := <-nicknames:
+				log.Info("用户查询更新:" + nickname)
+				playerData := pubgTracker.Get(nickname)
+				log.Info(playerData)
+			}
+		}
+		defer close(tracker.nicknames)
+	}(tracker.nicknames)
 }

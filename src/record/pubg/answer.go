@@ -1,15 +1,15 @@
 package pubg
 
 import (
-	"fmt"
 	"github.com/robertkrimen/otto"
+	"record/log"
 	"regexp"
 	"strings"
 )
 
 func getJsAnswer(html string) string {
 
-	fmt.Println("问答开始")
+	log.Info("问答开始")
 
 	reg := regexp.MustCompile(`(?i:setTimeout\(function\(\){)([\w\W]*)}, 4000\);`)
 	result := reg.Find([]byte(html))
@@ -43,7 +43,7 @@ func getJsAnswer(html string) string {
 	vm := otto.New()
 	value, _ := vm.Run(javascript)
 
-	fmt.Println("结果是： " + value.String())
+	log.Info("结果是： " + value.String())
 
 	return value.String()
 }

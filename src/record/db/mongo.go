@@ -1,17 +1,17 @@
 package db
 
 import (
-	"fmt"
 	"gopkg.in/mgo.v2"
+	"record/log"
 )
 
 const (
-	DatabaseUrl  = "127.0.0.1:27017"
 	DatabaseName = "record"
 	TableName    = "pubg_play_data"
 )
 
 type Mongo struct {
+	dialInfo   *mgo.DialInfo
 	session    *mgo.Session
 	database   *mgo.Database
 	Collection *mgo.Collection
@@ -23,9 +23,9 @@ func (mongo *Mongo) selectCollection(tableName string) {
 }
 
 func (mongo *Mongo) connection() {
-	mongo.session, mongo.err = mgo.Dial(DatabaseUrl) //连接数据库
+	mongo.session, mongo.err = mgo.DialWithInfo(mongo.dialInfo) //连接数据库
 	if mongo.err != nil {
-		fmt.Println(mongo.err.Error())
+		log.Info("mongo连接错误" + mongo.err.Error())
 	}
 	mongo.session.SetMode(mgo.Monotonic, true)
 	mongo.database = mongo.session.DB(DatabaseName) //数据库名称
@@ -44,8 +44,8 @@ func (mongo *Mongo) Update(selector interface{}, update interface{}) error {
 	return mongo.Collection.Update(selector, update)
 }
 
-func New() *Mongo {
-	mongo := &Mongo{}
+func New(dialInfo *mgo.DialInfo) *Mongo {
+	mongo := &Mongo{dialInfo: dialInfo}
 	mongo.connection()
 	return mongo
 }
