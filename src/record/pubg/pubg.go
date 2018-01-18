@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"path/filepath"
 	"record/db"
 	"record/log"
 	"regexp"
@@ -136,11 +138,23 @@ func (pubg *Pubg) Save(playerData *PlayerData) {
 		AccountId string `bson:"_id"`
 	}{}
 	query.AccountId = playerData.AccountID
-	count, err := pubg.mongo.Select(query).Count()
+	data := pubg.mongo.Select(query)
+	count, err := data.Count()
 	if err != nil {
 		log.Info("mongo查询错误:" + err.Error())
 	} else {
 		if count > 0 {
+			recordInfo := &PlayerData{}
+			err := data.One(recordInfo)
+			if err != nil {
+				log.Info(err)
+			} else {
+				if playerData.SteamID == 0 {
+					playerData.SteamID = recordInfo.SteamID
+				}
+				playerData.CreatedAt = recordInfo.CreatedAt
+			}
+
 			playerData.UpdatedAt = time.Now().Unix()
 			pubg.mongo.Update(query, playerData)
 		} else {
@@ -199,10 +213,17 @@ func (tracker *Tracker) Do(pubgTracker *Pubg) {
 			select {
 			case nickname := <-nicknames:
 				log.Info("用户查询更新:" + nickname)
-				playerData := pubgTracker.Get(nickname)
-				log.Info(playerData)
+				pubgTracker.Get(nickname)
+				//log.Info(playerData)
 			}
 		}
-		defer close(tracker.nicknames)
 	}(tracker.nicknames)
+}
+
+func getCurrentDirectory() string {
+	dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return strings.Replace(dir, "\\", "/", -1)
 }

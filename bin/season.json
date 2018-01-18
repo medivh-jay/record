@@ -1,0 +1,34 @@
+{
+  "season": [
+    {
+      "season": "2017-pre6",
+      "display_year": "2017",
+      "display_season": "第6赛季"
+    },
+    {
+      "season": "2017-pre5",
+      "display_year": "2017",
+      "display_season": "第5赛季"
+    },
+    {
+      "season": "2017-pre4",
+      "display_year": "2017",
+      "display_season": "第4赛季"
+    },
+    {
+      "season": "2017-pre3",
+      "display_year": "2017",
+      "display_season": "第3赛季"
+    },
+    {
+      "season": "2017-pre2",
+      "display_year": "2017",
+      "display_season": "第2赛季"
+    },
+    {
+      "season": "2017-pre1",
+      "display_year": "2017",
+      "display_season": "第1赛季"
+    }
+  ]
+}

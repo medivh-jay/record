@@ -2,46 +2,38 @@ package pubg
 
 import (
 	"encoding/json"
+	"io/ioutil"
+	"os"
+	"record/log"
 	"reflect"
 	"strings"
 )
 
 type Season struct {
-	Season [5]struct {
+	jsonFile string
+
+	Season []struct {
 		Season        string `json:"season"`
 		DisplayYear   string `json:"display_year"`
 		DisplaySeason string `json:"display_season"`
 	} `json:"season"`
 }
 
+func (season *Season) Load() {
+	reader, err := os.Open(getCurrentDirectory() + "/season.json")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	seasons, err := ioutil.ReadAll(reader)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+
+	json.Unmarshal(seasons, season)
+	reader.Close()
+}
+
 func (season *Season) GetSeason() []byte {
-	sea := [5]struct {
-		Season        string `json:"season"`
-		DisplayYear   string `json:"display_year"`
-		DisplaySeason string `json:"display_season"`
-	}{}
-	season.Season = sea
-
-	season.Season[0].Season = "2017-pre5"
-	season.Season[0].DisplayYear = "2017"
-	season.Season[0].DisplaySeason = "第5赛季"
-
-	season.Season[1].Season = "2017-pre4"
-	season.Season[1].DisplayYear = "2017"
-	season.Season[1].DisplaySeason = "第4赛季"
-
-	season.Season[2].Season = "2017-pre3"
-	season.Season[2].DisplayYear = "2017"
-	season.Season[2].DisplaySeason = "第3赛季"
-
-	season.Season[3].Season = "2017-pre2"
-	season.Season[3].DisplayYear = "2017"
-	season.Season[3].DisplaySeason = "第2赛季"
-
-	season.Season[4].Season = "2017-pre1"
-	season.Season[4].DisplayYear = "2017"
-	season.Season[4].DisplaySeason = "第1赛季"
-
 	js, _ := json.Marshal(season)
 	return js
 }
@@ -140,6 +132,7 @@ type Survival struct {
 	MostSurvivalTime    string `json:"MostSurvivalTime"`
 }
 
+// 用户总览信息的结构
 type Match struct {
 	AccountID string `json:"account_id"`
 	Avatar    string `json:"avatar"`
@@ -158,14 +151,19 @@ type Match struct {
 	} `json:"stats"`
 }
 
-func (match *Match) GetStats(matchType string, region string, season string, playerData *PlayerData) []byte {
+func (match *Match) ToJSON() []byte {
+	js, _ := json.Marshal(match)
+	return js
+}
+
+// 生成用户总览的信息
+func (match *Match) GetStats(matchType string, region string, season string, playerData *PlayerData) *Match {
 	match.AccountID = playerData.AccountID
 	match.Avatar = playerData.Avatar
 	match.Match = matchType
 	match.Nickname = playerData.PlayerName
 	match.Region = region
 	match.Season = season
-	stats := playerData.Stats
 	match.Stats.Performance = &Performance{}
 	match.Stats.SkillRating = &SkillRating{}
 	match.Stats.PerGame = &PerGame{}
@@ -173,37 +171,21 @@ func (match *Match) GetStats(matchType string, region string, season string, pla
 	match.Stats.Survival = &Survival{}
 	match.Stats.Distance = &Distance{}
 	match.Stats.Support = &Support{}
-	performance := reflect.ValueOf(match.Stats.Performance).Elem()
-	skillRating := reflect.ValueOf(match.Stats.SkillRating).Elem()
-	perGame := reflect.ValueOf(match.Stats.PerGame).Elem()
-	combat := reflect.ValueOf(match.Stats.Combat).Elem()
-	survival := reflect.ValueOf(match.Stats.Survival).Elem()
-	distance := reflect.ValueOf(match.Stats.Distance).Elem()
-	support := reflect.ValueOf(match.Stats.Support).Elem()
-	for _, stat := range stats {
+
+	playerStats := map[string]reflect.Value{
+		`Performance`:  reflect.ValueOf(match.Stats.Performance).Elem(),
+		`Skill Rating`: reflect.ValueOf(match.Stats.SkillRating).Elem(),
+		`Per Game`:     reflect.ValueOf(match.Stats.PerGame).Elem(),
+		`Combat`:       reflect.ValueOf(match.Stats.Combat).Elem(),
+		`Survival`:     reflect.ValueOf(match.Stats.Survival).Elem(),
+		`Distance`:     reflect.ValueOf(match.Stats.Distance).Elem(),
+		`Support`:      reflect.ValueOf(match.Stats.Support).Elem(),
+	}
+
+	for _, stat := range playerData.Stats {
 		if stat.Match == matchType && stat.Region == region && stat.Season == season {
 			for _, sonStat := range stat.Stats {
-				if sonStat.Category == "Performance" {
-					performance.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Skill Rating" {
-					skillRating.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Per Game" {
-					perGame.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Combat" {
-					combat.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Survival" {
-					survival.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Distance" {
-					distance.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
-				if sonStat.Category == "Support" {
-					support.FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
-				}
+				playerStats[sonStat.Category].FieldByName(sonStat.Field).Set(reflect.ValueOf(sonStat.Value))
 			}
 		}
 	}
@@ -211,10 +193,10 @@ func (match *Match) GetStats(matchType string, region string, season string, pla
 		return nil
 	}
 
-	js, _ := json.Marshal(match)
-	return js
+	return match
 }
 
+// 赛季信息
 type RegionInfo struct {
 	Season string `json:"season"`
 	Data   *struct {
@@ -224,10 +206,12 @@ type RegionInfo struct {
 	} `json:"data"`
 }
 
+// 赛季信息结构
 type Regions struct {
 	RegionInfo map[string]*RegionInfo `json:"region_info"`
 }
 
+// 获取用户赛季信息
 func (regions *Regions) GetUserRegion(playerData *PlayerData) []byte {
 	regions.RegionInfo = make(map[string]*RegionInfo)
 	stats := playerData.Stats
@@ -257,10 +241,12 @@ func (regions *Regions) GetUserRegion(playerData *PlayerData) []byte {
 	return js
 }
 
+// 历史比赛信息http返回结构
 type History struct {
 	Histories []interface{} `json:"histories"`
 }
 
+// 获取用户历史比赛信息
 func (history *History) GetHistory(match string, playerData *PlayerData) []byte {
 	history.Histories = []interface{}{}
 	for _, stat := range playerData.MatchHistory {
@@ -275,4 +261,20 @@ func (history *History) GetHistory(match string, playerData *PlayerData) []byte 
 
 	js, _ := json.Marshal(history)
 	return js
+}
+
+// 战绩积分时间kd结构
+type Overview struct {
+	Score  string
+	KD     string
+	Played int
+}
+
+// 获取用户战绩积分，kd，时间
+func (overview *Overview) GetOverview(data *PlayerData, matchType string, region string, season string) {
+	overview.Played = data.TimePlayed
+	match := &Match{}
+	match.GetStats(matchType, region, season, data)
+	overview.KD = match.Stats.Performance.KillDeathRatio
+	overview.Score = match.Stats.SkillRating.BestRating
 }

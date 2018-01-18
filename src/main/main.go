@@ -19,11 +19,9 @@ func main() {
 	password := flag.String("password", "e5d$e(Gs%epN3nDb", "mongo password")
 	flag.Parse()
 	log.Info("服务启动!时间:" + time.Now().String() + ",mongoDB地址:" + *mgoIp + ",mongo验证（用户名:" + *username + ", 密码:" + *password + "）")
-
 	mgoDialInfo := &mgo.DialInfo{Username: *username, Password: *password, Addrs: []string{*mgoIp}}
 
 	pubgTracker := pubg.New(mgoDialInfo)
-
 	pubg.TrackerGo.New().Do(pubgTracker)
 
 	nilStruct := struct {
@@ -40,6 +38,7 @@ func main() {
 
 	http.HandleFunc("/pubg/season.json", func(writer http.ResponseWriter, request *http.Request) {
 		season := &pubg.Season{}
+		season.Load()
 		writer.Write(season.GetSeason())
 	})
 
@@ -125,7 +124,7 @@ func main() {
 			}
 			result := match.GetStats(matchType, region, season, data)
 			if result != nil {
-				writer.Write(result)
+				writer.Write(result.ToJSON())
 			} else {
 				writer.Write(js)
 			}
@@ -164,6 +163,30 @@ func main() {
 		}
 	})
 
+	http.HandleFunc("/pubg/overview", func(writer http.ResponseWriter, request *http.Request) {
+		params, _ := url.ParseQuery(request.URL.RawQuery)
+		if _, ok := params["nickname"]; ok {
+			nickname := params["nickname"][0]
+			overview := &pubg.Overview{}
+			playerData := pubgTracker.Find(nickname)
+			season := &pubg.Season{}
+			season.Load()
+			overview.GetOverview(playerData, "solo", "agg", season.Season[0].Season)
+			js, _ := json.Marshal(overview)
+			writer.Write(js)
+		} else if _, ok := params["steamid"]; ok {
+			steamId := params["steamid"][0]
+			overview := &pubg.Overview{}
+			steamID, _ := strconv.ParseInt(steamId, 10, 64)
+			playerData := pubgTracker.FindBySteamId(steamID)
+			season := &pubg.Season{}
+			season.Load()
+			overview.GetOverview(playerData, "solo", "agg", season.Season[0].Season)
+			js, _ := json.Marshal(overview)
+			writer.Write(js)
+		}
+	})
+
 	http.HandleFunc("/pubg/upload.json", func(writer http.ResponseWriter, request *http.Request) {
 		request.ParseForm()
 		if request.Method != "POST" {
@@ -171,12 +194,17 @@ func main() {
 			result, _ := json.Marshal(nilStruct)
 			writer.Write(result)
 		} else {
-			if _, ok := request.Form["pubg"]; ok {
-				log.Info(request.Form["pubg"][0])
-				info := pubgTracker.PlayerData([]byte("var playerData = " + request.Form["pubg"][0]))
+			if uploadString, ok := request.Form["pubg"]; ok {
+				loadString := uploadString[0]
+				log.Info(loadString)
+				info := pubgTracker.PlayerData([]byte("var playerData = " + loadString))
 				playerData := &pubg.PlayerData{}
 				json.Unmarshal([]byte(info), playerData)
 				if playerData.AccountID != "" {
+					if steamIDs, ok := request.Form["steamId"]; ok {
+						steamID := steamIDs[0]
+						playerData.SteamID, _ = strconv.Atoi(steamID)
+					}
 					pubgTracker.Save(playerData)
 					successStruct.Result = true
 					result, _ := json.Marshal(successStruct)
